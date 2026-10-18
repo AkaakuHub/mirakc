@@ -940,6 +940,7 @@ where
         let stream = self
             .tuner_manager
             .call(StartStreaming {
+                preferred_tuner: schedule.options.preferred_tuner.clone(),
                 channel: service.channel.clone(),
                 user: TunerUser {
                     info: TunerUserInfo::Recorder(program_id),
@@ -1737,6 +1738,10 @@ pub enum RecordingScheduleState {
 #[derive(ToSchema)]
 #[schema(title = "RecordingOptions")]
 pub struct RecordingOptions {
+    /// The name of a tuner to prefer when available.
+    /// Another tuner is selected automatically when unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_tuner: Option<String>,
     /// A relative path of a file to store recorded data.
     #[schema(value_type = String)]
     pub content_path: PathBuf,
@@ -1798,6 +1803,7 @@ mod test_macros {
     macro_rules! options {
         ($content_path:expr, $priority:expr) => {
             RecordingOptions {
+                preferred_tuner: None,
                 content_path: $content_path.into(),
                 priority: $priority.into(),
                 pre_filters: vec![],
@@ -1873,11 +1879,12 @@ mod tests {
 
         let mut manager = manager!(config.clone());
 
-        let schedule = schedule!(
+        let mut schedule = schedule!(
             RecordingScheduleState::Scheduled,
             program!((0, 1, 1), now, "1h"),
             options!("1.m2ts", 0)
         );
+        schedule.options.preferred_tuner = Some("preferred".to_string());
         let result = manager.add_schedule(schedule);
         assert_matches!(result, Ok(()));
 
@@ -1905,6 +1912,13 @@ mod tests {
         let mut manager = manager!(config.clone());
         manager.load_schedules();
         assert_eq!(manager.schedules.len(), num_schedules);
+        assert_eq!(
+            manager.schedules[&(0, 1, 1).into()]
+                .options
+                .preferred_tuner
+                .as_deref(),
+            Some("preferred")
+        );
         assert!(manager.schedules.contains_key(&(0, 1, 1).into()));
         assert!(manager.schedules.contains_key(&(0, 1, 2).into()));
         assert!(manager.schedules.contains_key(&(0, 1, 3).into()));
