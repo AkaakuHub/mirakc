@@ -845,8 +845,6 @@ struct EpgSchedule {
     start_index: usize, // used for implementing a ring buffer on `units`.
     #[serde(skip)]
     programs: Arc<IndexMap<Eid, EpgProgram>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    imported_programs: Option<Arc<IndexMap<Eid, EpgProgram>>>,
 }
 
 impl EpgSchedule {
@@ -858,7 +856,6 @@ impl EpgSchedule {
             units: Default::default(),
             start_index: 0,
             programs: Default::default(),
-            imported_programs: None,
         }
     }
 
@@ -894,10 +891,6 @@ impl EpgSchedule {
     }
 
     fn collect_programs(&mut self) {
-        if let Some(programs) = &self.imported_programs {
-            self.programs = programs.clone();
-            return;
-        }
         let service_id = self.service_id;
         // Start from the previous day in order to collect programs in chronological order.
         let start_index = if self.start_index > 0 {
