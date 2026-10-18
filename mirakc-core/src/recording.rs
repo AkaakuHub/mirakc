@@ -1396,6 +1396,11 @@ where
 {
     async fn handle(&mut self, msg: RecordingFailed, _ctx: &mut Context<Self>) {
         tracing::debug!(msg.name = "RecordingFailed", %msg.program_id, ?msg.reason);
+        if let Some(schedule) = self.schedules.get_mut(&msg.program_id) {
+            schedule.state = RecordingScheduleState::Failed;
+            schedule.failed_reason = Some(msg.reason.clone());
+            self.save_schedules();
+        }
         self.emit_recording_failed(msg.program_id, msg.reason).await;
     }
 }
