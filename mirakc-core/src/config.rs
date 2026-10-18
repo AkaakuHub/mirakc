@@ -264,6 +264,13 @@ impl EpgConfig {
                 !source.command.trim().is_empty(),
                 "EPG source command is empty"
             );
+            assert!(
+                source
+                    .collect_command
+                    .as_ref()
+                    .is_none_or(|command| !command.trim().is_empty()),
+                "EPG source collection command is empty"
+            );
             assert!(!source.services.is_empty(), "EPG source services are empty");
             assert!(!source.interval.is_zero(), "EPG source interval is zero");
             for service in &source.services {
@@ -285,6 +292,8 @@ impl EpgConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ProgramSourceConfig {
     pub command: String,
+    #[serde(default)]
+    pub collect_command: Option<String>,
     pub services: Vec<ServiceId>,
     #[serde(with = "humantime_serde")]
     pub interval: Duration,
