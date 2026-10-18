@@ -814,10 +814,10 @@ impl JobsConfig {
                 self.sync_clocks.schedule = Self::default_sync_clocks().schedule;
             }
         }
+        if self.update_schedules.command.is_empty() {
+            self.update_schedules.command = Self::default_update_schedules().command;
+        }
         if !self.update_schedules.disabled {
-            if self.update_schedules.command.is_empty() {
-                self.update_schedules.command = Self::default_update_schedules().command;
-            }
             if self.update_schedules.schedule.is_empty() {
                 self.update_schedules.schedule = Self::default_update_schedules().schedule;
             }
@@ -2747,6 +2747,19 @@ mod tests {
             .unwrap()
             .normalize(),
             JobsConfig::default()
+        );
+    }
+
+    #[test]
+    fn test_disabled_schedule_job_keeps_manual_collection_command() {
+        let config = serde_norway::from_str::<JobsConfig>("update-schedules:\n  disabled: true\n")
+            .unwrap()
+            .normalize();
+        assert!(config.update_schedules.disabled);
+        assert!(config.update_schedules.schedule.is_empty());
+        assert_eq!(
+            config.update_schedules.command,
+            JobsConfig::default_update_schedules().command
         );
     }
 
