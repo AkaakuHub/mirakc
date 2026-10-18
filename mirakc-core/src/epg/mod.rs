@@ -36,6 +36,8 @@ use eit_feeder::EitFeeder;
 use job::JobManager;
 
 pub use clock_synchronizer::SyncClock;
+pub use job::InvokeUpdateSchedules;
+pub use job::ScheduleCollectionStatus;
 pub use models::AudioComponentDescriptor;
 pub use models::ComponentDescriptor;
 pub use models::EitDescriptor;
@@ -47,6 +49,7 @@ pub use models::SeriesDescriptor;
 pub struct Epg<T> {
     config: Arc<Config>,
     tuner_manager: T,
+    jobs: Option<Caller<InvokeUpdateSchedules>>,
 
     services: Arc<IndexMap<ServiceId, EpgService>>, // keeps insertion order
     clocks: Arc<HashMap<ServiceId, Clock>>,
@@ -64,6 +67,7 @@ impl<T> Epg<T> {
         Epg {
             config,
             tuner_manager,
+            jobs: None,
             services: Default::default(),
             clocks: Default::default(),
             schedules: Default::default(),
@@ -352,7 +356,7 @@ where
             ))
             .await;
 
-        let _ = ctx
+        let jobs = ctx
             .spawn_actor(JobManager::new(
                 self.config.clone(),
                 self.tuner_manager.clone(),
@@ -360,10 +364,27 @@ where
                 eit_feeder,
             ))
             .await;
+        self.jobs = Some(jobs.caller());
     }
 
     async fn stopped(&mut self, _ctx: &mut Context<Self>) {
         tracing::debug!("Stopped");
+    }
+}
+
+#[async_trait]
+impl<T> Handler<InvokeUpdateSchedules> for Epg<T>
+where
+    T: Clone + Send + Sync + 'static,
+    T: Call<StartStreaming>,
+    T: TriggerFactory<StopStreaming>,
+{
+    async fn handle(
+        &mut self,
+        msg: InvokeUpdateSchedules,
+        _ctx: &mut Context<Self>,
+    ) -> Result<ScheduleCollectionStatus, Error> {
+        self.jobs.as_ref().unwrap().call(msg).await?
     }
 }
 

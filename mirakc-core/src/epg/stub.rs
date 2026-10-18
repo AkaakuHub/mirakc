@@ -131,3 +131,13 @@ impl Call<RegisterEmitter> for EpgStub {
 }
 
 stub_impl_fire! {EpgStub, UnregisterEmitter}
+
+#[async_trait]
+impl Call<InvokeUpdateSchedules> for EpgStub {
+    async fn call(
+        &self,
+        _msg: InvokeUpdateSchedules,
+    ) -> actlet::Result<Result<ScheduleCollectionStatus, Error>> {
+        Ok(Ok(ScheduleCollectionStatus::Started))
+    }
+}

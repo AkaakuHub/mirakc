@@ -29,6 +29,7 @@ use super::X_MIRAKURUN_TUNER_USER_ID;
 
 mod channels;
 mod iptv;
+mod jobs;
 mod onair;
 mod programs;
 mod recording;
@@ -51,6 +52,7 @@ where
     T: Call<crate::tuner::StartStreaming>,
     T: TriggerFactory<crate::tuner::StopStreaming>,
     E: Clone + Send + Sync + 'static,
+    E: Call<crate::epg::InvokeUpdateSchedules>,
     E: Call<crate::epg::QueryChannel>,
     E: Call<crate::epg::QueryChannels>,
     E: Call<crate::epg::QueryClock>,
@@ -89,6 +91,10 @@ where
     let mut router = Router::new()
         .route("/version", routing::get(version::get))
         .route("/status", routing::get(status::get))
+        .route(
+            "/jobs/update-schedules",
+            routing::post(jobs::update_schedules),
+        )
         .route("/tuners", routing::get(tuners::list))
         .route("/tuners/{index}", routing::get(tuners::get))
         .route("/channels", routing::get(channels::list))
@@ -198,6 +204,7 @@ where
     paths(
         version::get,
         status::get,
+        jobs::update_schedules,
         tuners::list,
         tuners::get,
         channels::list,
@@ -239,6 +246,8 @@ where
     components(
         schemas(
             models::Status,
+            jobs::ScheduleCollection,
+            epg::ScheduleCollectionStatus,
             models::Version,
             models::WebOnairProgram,
             models::WebProcessModel,

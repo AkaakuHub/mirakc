@@ -151,23 +151,31 @@ where
         self.schedule_update_schedules(ctx);
     }
 
-    async fn invoke_update_schedules(&mut self, _ctx: &mut Context<Self>) {
+    async fn invoke_update_schedules(
+        &mut self,
+        ctx: &mut Context<Self>,
+    ) -> ScheduleCollectionStatus {
         if self.updating_schedules {
-            tracing::warn!(job = "update-schedules", "Already running, skip");
-            return;
+            tracing::debug!(job = "update-schedules", "Already running");
+            return ScheduleCollectionStatus::Running;
         }
 
         tracing::info!(job = "update-schedules", "Performing...");
-        let now = Instant::now();
         self.updating_schedules = true;
         let eit_feeder = self.eit_feeder.clone();
-        match eit_feeder.call(FeedEitSections).await {
-            Ok(_) => self.epg.emit(SaveSchedules).await,
-            Err(err) => tracing::error!(%err, job = "update-schedules"),
-        }
-        self.updating_schedules = false;
-        let elapsed = now.elapsed();
-        tracing::info!(job = "update-schedules", elapsed = %humantime::format_duration(elapsed), "Done");
+        let epg = self.epg.clone();
+        let addr = ctx.address().clone();
+        ctx.spawn_task(async move {
+            let now = Instant::now();
+            match eit_feeder.call(FeedEitSections).await {
+                Ok(_) => epg.emit(SaveSchedules).await,
+                Err(err) => tracing::error!(%err, job = "update-schedules"),
+            }
+            addr.emit(SchedulesUpdated).await;
+            let elapsed = now.elapsed();
+            tracing::info!(job = "update-schedules", elapsed = %humantime::format_duration(elapsed), "Done");
+        });
+        ScheduleCollectionStatus::Started
     }
 
     fn schedule_update_schedules(&mut self, ctx: &mut Context<Self>) {
@@ -363,8 +371,16 @@ where
 
 // invoke update schedules
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScheduleCollectionStatus {
+    Started,
+    Running,
+}
+
 #[derive(Message)]
-struct InvokeUpdateSchedules;
+#[reply(Result<ScheduleCollectionStatus, crate::error::Error>)]
+pub struct InvokeUpdateSchedules;
 
 #[async_trait]
 impl<T, E, F> Handler<InvokeUpdateSchedules> for JobManager<T, E, F>
@@ -379,9 +395,34 @@ where
     F: Clone + Send + Sync + 'static,
     F: Call<FeedEitSections>,
 {
-    async fn handle(&mut self, _msg: InvokeUpdateSchedules, ctx: &mut Context<Self>) {
+    async fn handle(
+        &mut self,
+        _msg: InvokeUpdateSchedules,
+        ctx: &mut Context<Self>,
+    ) -> Result<ScheduleCollectionStatus, crate::error::Error> {
         tracing::debug!(msg.name = "InvokeUpdateSchedules");
-        self.invoke_update_schedules(ctx).await;
+        Ok(self.invoke_update_schedules(ctx).await)
+    }
+}
+
+#[derive(Message)]
+struct SchedulesUpdated;
+
+#[async_trait]
+impl<T, E, F> Handler<SchedulesUpdated> for JobManager<T, E, F>
+where
+    T: Clone + Send + Sync + 'static,
+    T: Call<StartStreaming>,
+    T: TriggerFactory<StopStreaming>,
+    E: Clone + Send + Sync + 'static,
+    E: Emit<SaveSchedules>,
+    E: Emit<UpdateClocks>,
+    E: Emit<UpdateServices>,
+    F: Clone + Send + Sync + 'static,
+    F: Call<FeedEitSections>,
+{
+    async fn handle(&mut self, _msg: SchedulesUpdated, _ctx: &mut Context<Self>) {
+        self.updating_schedules = false;
     }
 }
 
@@ -410,5 +451,73 @@ fn is_fresh(config: &Config, filename: &str) -> bool {
             .map(|elapsed| elapsed <= period)
             .unwrap_or(false),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::Notify;
+
+    #[derive(Clone)]
+    struct EpgStub;
+    stub_impl_emit! {EpgStub, SaveSchedules}
+    stub_impl_emit! {EpgStub, UpdateClocks}
+    stub_impl_emit! {EpgStub, UpdateServices}
+
+    #[derive(Clone, Default)]
+    struct FeederStub {
+        calls: Arc<AtomicUsize>,
+        started: Arc<Notify>,
+        finish: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl Call<FeedEitSections> for FeederStub {
+        async fn call(
+            &self,
+            _msg: FeedEitSections,
+        ) -> actlet::Result<Result<(), crate::error::Error>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.started.notify_one();
+            self.finish.notified().await;
+            Ok(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_manual_schedule_collection_does_not_restart_running_job() {
+        let system = System::new();
+        let mut config = Config::default();
+        config.jobs.scan_services.disabled = true;
+        config.jobs.sync_clocks.disabled = true;
+        config.jobs.update_schedules.disabled = true;
+        let feeder = FeederStub::default();
+        let jobs = system
+            .spawn_actor(JobManager::new(
+                Arc::new(config),
+                crate::tuner::stub::TunerManagerStub::default(),
+                EpgStub,
+                feeder.clone(),
+            ))
+            .await;
+        assert_eq!(
+            jobs.call(InvokeUpdateSchedules).await.unwrap().unwrap(),
+            ScheduleCollectionStatus::Started
+        );
+        feeder.started.notified().await;
+        let status = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            jobs.call(InvokeUpdateSchedules),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+        assert_eq!(status, ScheduleCollectionStatus::Running);
+        assert_eq!(feeder.calls.load(Ordering::SeqCst), 1);
+        feeder.finish.notify_one();
+        system.shutdown().await;
     }
 }
