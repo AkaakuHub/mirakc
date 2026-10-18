@@ -155,7 +155,13 @@ epg:
 Every source requires a nonempty command, an explicit nonempty list of service
 IDs, and a positive refresh interval. A service may belong to only one source.
 Services must first be discovered by `scan-services`. Schedule collection from
-the transport stream is disabled for those services.
+the transport stream is disabled for those services unless `collect-command` is
+specified. This optional command consumes the channel's transport stream during
+manual and scheduled EPG collection, using the same tuner allocation and job
+priority as native EIT collection. It may update the external source's cache
+without writing to stdout, or emit `collect-eits` JSON sections. Program snapshots
+continue to be imported through `command` at the configured interval. Services
+on the same channel using the same collection command share one collection pass.
 
 An accepted snapshot replaces all programs for the configured services, including
 programs spanning midnight. An empty array clears them. Each program must have a

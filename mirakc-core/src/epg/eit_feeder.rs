@@ -43,19 +43,23 @@ where
     async fn feed_eit_sections(&self) -> Result<(), Error> {
         let services = self.epg.call(QueryServices).await?;
 
-        let mut map: HashMap<String, EpgChannel> = HashMap::new();
+        let mut map: HashMap<(String, String), EpgChannel> = HashMap::new();
         for sv in services.values() {
-            if self
+            let command = match self
                 .config
                 .epg
                 .program_sources
                 .iter()
-                .any(|source| source.services.contains(&sv.id))
+                .find(|source| source.services.contains(&sv.id))
             {
-                continue;
-            }
+                Some(source) => match &source.collect_command {
+                    Some(command) => command,
+                    None => continue,
+                },
+                None => &self.config.jobs.update_schedules.command,
+            };
             let chid = format!("{}/{}", sv.channel.channel_type, sv.channel.channel);
-            map.entry(chid)
+            map.entry((chid, command.clone()))
                 .and_modify(|ch| ch.services.push(sv.sid()))
                 .or_insert(EpgChannel {
                     name: sv.channel.name.clone(),
@@ -66,16 +70,14 @@ where
                     excluded_services: vec![],
                 });
         }
-        let channels: Vec<EpgChannel> = map.values().cloned().collect();
+        let channels = map
+            .into_iter()
+            .map(|((_, command), channel)| (channel, command))
+            .collect();
 
-        EitCollector::new(
-            self.config.jobs.update_schedules.command.clone(),
-            channels,
-            self.tuner_manager.clone(),
-            self.epg.clone(),
-        )
-        .collect_schedules()
-        .await
+        EitCollector::new(channels, self.tuner_manager.clone(), self.epg.clone())
+            .collect_schedules()
+            .await
     }
 }
 
@@ -133,8 +135,7 @@ where
 // collector
 
 pub struct EitCollector<T, E> {
-    command: String,
-    channels: Vec<EpgChannel>,
+    channels: Vec<(EpgChannel, String)>,
     tuner_manager: T,
     epg: E,
 }
@@ -154,9 +155,8 @@ where
 {
     const LABEL: &'static str = "epg.update-schedules";
 
-    pub fn new(command: String, channels: Vec<EpgChannel>, tuner_manager: T, epg: E) -> Self {
+    pub fn new(channels: Vec<(EpgChannel, String)>, tuner_manager: T, epg: E) -> Self {
         EitCollector {
-            command,
             channels,
             tuner_manager,
             epg,
@@ -164,15 +164,8 @@ where
     }
 
     pub async fn collect_schedules(self) -> Result<(), Error> {
-        for channel in self.channels.iter() {
-            match Self::collect_eits_in_channel(
-                channel,
-                &self.command,
-                &self.tuner_manager,
-                &self.epg,
-            )
-            .await
-            {
+        for (channel, command) in &self.channels {
+            match Self::collect_eits_in_channel(channel, command, &self.tuner_manager, &self.epg).await {
                 Ok(()) => self.epg.emit(SaveSchedules).await,
                 Err(err) => tracing::warn!(%err, %channel, "Failed to collect EIT sections"),
             }
