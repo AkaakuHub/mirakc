@@ -526,6 +526,8 @@ impl PartialEq for ChannelConfig {
 #[serde(deny_unknown_fields)]
 pub struct TunerConfig {
     pub name: String,
+    #[serde(default)]
+    pub priority: i32,
     #[serde(rename = "types")]
     pub channel_types: Vec<ChannelType>,
     pub command: String,
@@ -570,6 +572,7 @@ impl TunerConfig {
 impl Default for TunerConfig {
     fn default() -> Self {
         TunerConfig {
+            priority: 0,
             name: "".to_string(),
             channel_types: vec![],
             command: "".to_string(),
@@ -2394,6 +2397,7 @@ mod tests {
 
     fn tuner_config() -> TunerConfig {
         TunerConfig {
+            priority: 0,
             name: "test".to_string(),
             channel_types: vec![ChannelType::GR],
             command: "test".to_string(),
