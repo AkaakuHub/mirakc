@@ -67,6 +67,7 @@ where
 
     let stream = tuner_manager
         .call(tuner::StartStreaming {
+            preferred_tuner: None,
             channel: service.channel.clone(),
             user: user.clone(),
             stream_id: None,

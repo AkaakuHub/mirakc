@@ -342,6 +342,7 @@ where
         let stream = self
             .tuner_manager
             .call(StartStreaming {
+                preferred_tuner: None,
                 channel: channel.clone(),
                 user,
                 stream_id: None,

@@ -167,6 +167,7 @@ impl TunerManager {
         channel: &EpgChannel,
         user: &TunerUser,
         stream_id: &Option<TunerSubscriptionId>,
+        preferred_tuner: Option<&str>,
         ctx: &C,
     ) -> Result<TunerSubscription, Error>
     where
@@ -191,6 +192,25 @@ impl TunerManager {
             .find(|tuner| tuner.is_reserved_for(user));
         if let Some(tuner) = found {
             tracing::debug!(tuner.index, %channel, %user.info, "Use reserved tuner");
+            if !tuner.is_active() {
+                let filters =
+                    Self::make_filter_commands(tuner, channel, &self.config.filters.tuner_filter)?;
+                tuner.activate(channel, filters, ctx).await?;
+            }
+            self.event_emitters
+                .emit(Event::StatusChanged(tuner.index))
+                .await;
+            return Ok(tuner.subscribe(user));
+        }
+
+        let found = self.tuners.iter_mut().find(|tuner| {
+            preferred_tuner == Some(tuner.name.as_str())
+                && !tuner.is_excluded_for(channel)
+                && tuner.is_supported_type(channel)
+                && (tuner.is_reuseable(channel) || tuner.is_available_for(channel))
+        });
+        if let Some(tuner) = found {
+            tracing::debug!(tuner.index, %channel, %user.info, "Use preferred tuner");
             if !tuner.is_active() {
                 let filters =
                     Self::make_filter_commands(tuner, channel, &self.config.filters.tuner_filter)?;
@@ -427,6 +447,7 @@ impl Handler<QueryTuner> for TunerManager {
 #[derive(Message)]
 #[reply(Result<TunerStream, Error>)]
 pub struct StartStreaming {
+    pub preferred_tuner: Option<String>,
     pub channel: EpgChannel,
     pub user: TunerUser,
     pub stream_id: Option<TunerSubscriptionId>,
@@ -442,7 +463,13 @@ impl Handler<StartStreaming> for TunerManager {
         tracing::debug!(msg.name = "StartStreaming", %msg.channel, %msg.user.info, %msg.user.priority);
 
         let subscription = self
-            .activate_tuner(&msg.channel, &msg.user, &msg.stream_id, ctx)
+            .activate_tuner(
+                &msg.channel,
+                &msg.user,
+                &msg.stream_id,
+                msg.preferred_tuner.as_deref(),
+                ctx,
+            )
             .await?;
 
         let result = subscription
@@ -1013,6 +1040,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1026,6 +1054,7 @@ mod tests {
             // Reuse the tuner
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(1.into()),
                     stream_id: None,
@@ -1039,6 +1068,7 @@ mod tests {
             // Lower and same priority user cannot grab the tuner
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"),
                     user: create_user(1.into()),
                     stream_id: None,
@@ -1049,6 +1079,7 @@ mod tests {
             // Higher priority user can grab the tuner
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"),
                     user: create_user(2.into()),
                     stream_id: None,
@@ -1062,6 +1093,7 @@ mod tests {
             // Dedicated tuner
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: TunerUser {
                         info: TunerUserInfo::OnairProgramTracker("tracker".to_string()),
@@ -1074,6 +1106,75 @@ mod tests {
                 assert_eq!(stream.id().session_id.tuner_index, 2);
                 assert_ne!(stream.id().session_id, stream1.id().session_id);
             });
+        }
+        {
+            let config: Arc<Config> = Arc::new(
+                serde_norway::from_str(
+                    r#"
+                tuners:
+                  - name: first
+                    types: [GR]
+                    command: sleep 1
+                  - name: second
+                    types: [GR]
+                    command: sleep 1
+                  - name: unsupported
+                    types: [BS]
+                    command: sleep 1
+                  - name: disabled
+                    types: [GR]
+                    command: sleep 1
+                    disabled: true
+                "#,
+                )
+                .unwrap(),
+            );
+            let manager = system.spawn_actor(TunerManager::new(config)).await;
+            let stream = manager
+                .call(StartStreaming {
+                    preferred_tuner: Some("second".to_string()),
+                    channel: create_channel("0"),
+                    user: create_user(0.into()),
+                    stream_id: None,
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stream.id().session_id.tuner_index, 1);
+
+            let preferred = manager
+                .call(StartStreaming {
+                    preferred_tuner: Some("first".to_string()),
+                    channel: create_channel("0"),
+                    user: create_user(0.into()),
+                    stream_id: None,
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(preferred.id().session_id.tuner_index, 0);
+            manager.emit(StopStreaming { id: preferred.id() }).await;
+
+            for name in [
+                Some("second"),
+                Some("unsupported"),
+                Some("disabled"),
+                Some("missing"),
+                None,
+            ] {
+                let stream = manager
+                    .call(StartStreaming {
+                        preferred_tuner: name.map(str::to_string),
+                        channel: create_channel("1"),
+                        user: create_user(0.into()),
+                        stream_id: None,
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(stream.id().session_id.tuner_index, 0);
+                manager.emit(StopStreaming { id: stream.id() }).await;
+            }
         }
         system.stop();
     }
@@ -1105,6 +1206,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     // allowed
                     user: TunerUser {
@@ -1126,6 +1228,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()), // not allowed
                     stream_id: None,
@@ -1168,6 +1271,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"), // allowed
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1185,6 +1289,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"), // not allowed
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1220,6 +1325,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"),
                     user: create_user(1.into()),
                     stream_id: None,
@@ -1232,6 +1338,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1245,6 +1352,7 @@ mod tests {
             // Grab the lowest priority tuner.
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("2"),
                     user: create_user(2.into()),
                     stream_id: None,
@@ -1262,6 +1370,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1274,6 +1383,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"),
                     user: create_user(1.into()),
                     stream_id: None,
@@ -1287,6 +1397,7 @@ mod tests {
             // Grab the lowest priority tuner.
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("2"),
                     user: create_user(2.into()),
                     stream_id: None,
@@ -1305,6 +1416,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1317,6 +1429,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1329,6 +1442,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1342,6 +1456,7 @@ mod tests {
             // Grab a tuner with fewest users.
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("2"),
                     user: create_user(2.into()),
                     stream_id: None,
@@ -1360,6 +1475,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1372,6 +1488,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("1"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1385,6 +1502,7 @@ mod tests {
             // Grab a tuner with the lowest index.
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("2"),
                     user: create_user(2.into()),
                     stream_id: None,
@@ -1424,6 +1542,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: channel_gr!("excluded", "channel"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1433,6 +1552,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: channel_gr!("channel", "excluded"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1442,6 +1562,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: channel_gr!("channel", "channel"),
                     user: create_user(0.into()),
                     stream_id: None,
@@ -1682,6 +1803,7 @@ mod tests {
 
             let result = manager
                 .call(StartStreaming {
+                    preferred_tuner: None,
                     channel: create_channel("0"),
                     user: create_user(0.into()),
                     stream_id: None,
