@@ -222,10 +222,19 @@ impl TunerManager {
             return Ok(tuner.subscribe(user));
         }
 
+        let priority = self
+            .tuners
+            .iter()
+            .filter(|tuner| !tuner.is_excluded_for(channel))
+            .filter(|tuner| tuner.is_reuseable(channel) || tuner.is_available_for(channel))
+            .map(|tuner| tuner.config_priority)
+            .max();
+
         let found = self
             .tuners
             .iter_mut()
             .filter(|tuner| !tuner.is_excluded_for(channel))
+            .filter(|tuner| Some(tuner.config_priority) == priority)
             .find(|tuner| tuner.is_reuseable(channel));
         if let Some(tuner) = found {
             tracing::debug!(tuner.index, %channel, %user.info, "Reuse active tuner");
@@ -239,6 +248,7 @@ impl TunerManager {
             .tuners
             .iter_mut()
             .filter(|tuner| !tuner.is_excluded_for(channel))
+            .filter(|tuner| Some(tuner.config_priority) == priority)
             .find(|tuner| tuner.is_available_for(channel));
         if let Some(tuner) = found {
             tracing::debug!(tuner.index, %channel, %user.info, "Use tuner");
@@ -537,6 +547,7 @@ pub enum Event {
 
 struct Tuner {
     index: usize,
+    config_priority: i32,
     name: String,
     channel_types: Vec<ChannelType>,
     command: String,
@@ -558,6 +569,7 @@ impl Tuner {
     fn new(index: usize, config: &TunerConfig) -> Self {
         Tuner {
             index,
+            config_priority: config.priority,
             name: config.name.clone(),
             channel_types: config.channel_types.clone(),
             command: config.command.clone(),
@@ -1174,6 +1186,69 @@ mod tests {
                     .unwrap();
                 assert_eq!(stream.id().session_id.tuner_index, 0);
                 manager.emit(StopStreaming { id: stream.id() }).await;
+            }
+        }
+        {
+            let config: Arc<Config> = Arc::new(
+                serde_norway::from_str(
+                    r#"
+                tuners:
+                  - name: first
+                    priority: 1
+                    types: [GR]
+                    command: sleep 1
+                  - name: second
+                    types: [GR]
+                    command: sleep 1
+                  - name: unsupported
+                    priority: 2
+                    types: [BS]
+                    command: sleep 1
+                  - name: disabled
+                    priority: 3
+                    types: [GR]
+                    command: sleep 1
+                    disabled: true
+                "#,
+                )
+                .unwrap(),
+            );
+            let manager = system.spawn_actor(TunerManager::new(config)).await;
+            let first = manager
+                .call(StartStreaming {
+                    preferred_tuner: None,
+                    channel: create_channel("1"),
+                    user: create_user(0.into()),
+                    stream_id: None,
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(first.id().session_id.tuner_index, 0);
+            let second = manager
+                .call(StartStreaming {
+                    preferred_tuner: None,
+                    channel: create_channel("0"),
+                    user: create_user(0.into()),
+                    stream_id: None,
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(second.id().session_id.tuner_index, 1);
+            manager.emit(StopStreaming { id: first.id() }).await;
+            for _ in 0..2 {
+                let stream = manager
+                    .call(StartStreaming {
+                        preferred_tuner: None,
+                        channel: create_channel("0"),
+                        user: create_user(0.into()),
+                        stream_id: None,
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(stream.id().session_id.tuner_index, 0);
             }
         }
         system.stop();

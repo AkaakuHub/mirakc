@@ -27,6 +27,7 @@ suitable for your environment.
 | [tuners\[\].name]                        |                                   |
 | [tuners\[\].types]                       |                                   |
 | [tuners\[\].command]                     |                                   |
+| [tuners\[\].priority]                    | `0`                               |
 | [tuners\[\].time-limit]                  | `30000` (30s)                     |
 | [tuners\[\].disabled]                    | `false`                           |
 | [tuners\[\].decoded]                     | `false`                           |
@@ -81,6 +82,7 @@ suitable for your environment.
 [tuners\[\].name]: #tuners
 [tuners\[\].types]: #tuners
 [tuners\[\].command]: #tuners
+[tuners\[\].priority]: #tuners
 [tuners\[\].time-limit]: #tuners
 [tuners\[\].disabled]: #tuners
 [tuners\[\].decoded]: #tuners
@@ -639,6 +641,11 @@ Definitions of tuners.  At least, one tuner must be defined.
 * command
   * A Mustache template string of a command to open the tuner
   * The command must output TS packets to `stdout`
+* priority (optional)
+  * Prefer tuners with a higher value among tuners that can receive the channel.
+  * At the same priority, an active tuner receiving the channel is reused before
+    an idle tuner, in configuration order.
+  * Default: `0`
 * time-limit (optional)
   * A time limit in milliseconds
   * Stop streaming if no TS packet comes from the tuner for the time limit
