@@ -44,6 +44,15 @@ where
 
         let mut map: HashMap<String, EpgChannel> = HashMap::new();
         for sv in services.values() {
+            if self
+                .config
+                .epg
+                .program_sources
+                .iter()
+                .any(|source| source.services.contains(&sv.id))
+            {
+                continue;
+            }
             let chid = format!("{}/{}", sv.channel.channel_type, sv.channel.channel);
             map.entry(chid)
                 .and_modify(|ch| ch.services.push(sv.sid()))

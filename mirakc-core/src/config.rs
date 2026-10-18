@@ -252,10 +252,24 @@ impl Config {
 pub struct EpgConfig {
     #[serde(default)]
     pub cache_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub program_sources: Vec<ProgramSourceConfig>,
 }
 
 impl EpgConfig {
     fn validate(&self) {
+        let mut services = HashSet::new();
+        for source in &self.program_sources {
+            assert!(
+                !source.command.trim().is_empty(),
+                "EPG source command is empty"
+            );
+            assert!(!source.services.is_empty(), "EPG source services are empty");
+            assert!(!source.interval.is_zero(), "EPG source interval is zero");
+            for service in &source.services {
+                assert!(services.insert(*service), "Duplicate EPG source service");
+            }
+        }
         if let Some(cache_dir) = self.cache_dir.as_ref() {
             assert!(
                 cache_dir.is_dir(),
@@ -265,6 +279,15 @@ impl EpgConfig {
             tracing::warn!(config = "epg.cache-dir", "Not specified");
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ProgramSourceConfig {
+    pub command: String,
+    pub services: Vec<ServiceId>,
+    #[serde(with = "humantime_serde")]
+    pub interval: Duration,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -1649,6 +1672,7 @@ mod tests {
             .unwrap(),
             EpgConfig {
                 cache_dir: Some("/path/to/epg".into()),
+                program_sources: vec![],
             }
         );
 
