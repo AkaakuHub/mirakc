@@ -9,6 +9,7 @@ suitable for your environment.
 | PROPERTY                                 | DEFAULT                           |
 |------------------------------------------|-----------------------------------|
 | [epg.cache-dir]                          | `None`                            |
+| [epg.program-sources]                    | `[]`                              |
 | [server.addrs]                           | `[{http: 'localhost:40772'}]`     |
 | [server.stream-chunk-size]               | `32768` (32KiB)                   |
 | [server.stream-max-chunks]               | `1000`                            |
@@ -62,6 +63,7 @@ suitable for your environment.
 | [resource.logos]                         | `[]`                              |
 
 [epg.cache-dir]: #epgcache-dir
+[epg.program-sources]: #epgprogram-sources
 [server.addrs]: #serveraddrs
 [server.stream-chunk-size]: #serverstream-chunk-size
 [server.stream-max-chunks]: #serverstream-max-chunks
@@ -132,6 +134,34 @@ epg:
 [epg]
 cache-dir = "/path/to/epg/cache"
 ```
+
+## epg.program-sources
+
+Import complete program snapshots from commands without allocating a tuner.
+Each command writes one JSON array of [`EpgProgram`](../mirakc-core/src/epg/mod.rs)
+objects to stdout. This is mirakc's internal program format, not the
+Mirakurun `/api/programs` response format. Commands run directly without a shell.
+
+```yaml
+epg:
+  program-sources:
+    - command: /opt/tv/export-programs
+      services: [1100101]
+      interval: 60s
+```
+
+Every source requires a nonempty command, an explicit nonempty list of service
+IDs, and a positive refresh interval. A service may belong to only one source.
+Services must first be discovered by `scan-services`. Schedule collection from
+the transport stream is disabled for those services.
+
+An accepted snapshot replaces all programs for the configured services, including
+programs spanning midnight. An empty array clears them. Each program must have a
+unique ID, a start time, and a positive duration, and belong to a configured
+service. Snapshots are stored in the EPG cache when `epg.cache-dir` is configured.
+Commands have a ten-second time limit and a 16 MiB output limit. Failed commands
+or invalid snapshots leave the last accepted snapshot intact until the next
+scheduled attempt.
 
 ## server.addrs
 
