@@ -23,6 +23,7 @@ use crate::epg::SeriesDescriptor;
 pub enum ChannelType {
     GR,
     BS,
+    BS4K,
     CS,
     SKY,
 }
@@ -32,6 +33,7 @@ impl fmt::Display for ChannelType {
         match *self {
             ChannelType::GR => write!(f, "GR"),
             ChannelType::BS => write!(f, "BS"),
+            ChannelType::BS4K => write!(f, "BS4K"),
             ChannelType::CS => write!(f, "CS"),
             ChannelType::SKY => write!(f, "SKY"),
         }
