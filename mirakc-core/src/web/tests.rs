@@ -52,6 +52,22 @@ async fn test_get_status() {
 }
 
 #[test(tokio::test)]
+async fn test_update_schedules() {
+    let app = create_app(Default::default());
+    let req = Request::post("/api/jobs/update-schedules")
+        .header(HOST, "mirakc.test")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::ACCEPTED);
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({"status": "started"})
+    );
+}
+
+#[test(tokio::test)]
 async fn test_get_channels() {
     let res = get("/api/channels").await;
     assert_eq!(res.status(), StatusCode::OK);
