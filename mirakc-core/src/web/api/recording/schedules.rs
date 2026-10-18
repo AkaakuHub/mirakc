@@ -82,7 +82,7 @@ where
     R: Call<recording::AddRecordingSchedule>,
     R: Call<recording::QueryRecordingSchedule>,
 {
-    input.validate(&config)?;
+    input.options.validate(&config)?;
     let msg = epg::QueryProgram {
         program_id: input.program_id,
     };
@@ -91,6 +91,43 @@ where
     let msg = recording::AddRecordingSchedule { schedule };
     let schedule = recording_manager.call(msg).await??;
     Ok((StatusCode::CREATED, Json(schedule.into())))
+}
+
+/// Updates the options and tags of a recording schedule before recording starts.
+#[utoipa::path(
+    put,
+    path = "/recording/schedules/{program_id}",
+    params(
+        ("program_id" = u64, Path, description = "Mirakurun program ID"),
+    ),
+    request_body = WebRecordingScheduleUpdateInput,
+    responses(
+        (status = 200, description = "OK", body = WebRecordingSchedule),
+        (status = 400, description = "Invalid path"),
+        (status = 404, description = "Schedule not found"),
+        (status = 409, description = "Schedule cannot be edited in its current state"),
+        (status = 500, description = "Internal Server Error"),
+    ),
+    operation_id = "updateRecordingSchedule",
+)]
+pub(in crate::web::api) async fn update<R>(
+    State(ConfigExtractor(config)): State<ConfigExtractor>,
+    State(RecordingManagerExtractor(recording_manager)): State<RecordingManagerExtractor<R>>,
+    Path(program_id): Path<ProgramId>,
+    Json(input): Json<WebRecordingScheduleUpdateInput>,
+) -> Result<Json<WebRecordingSchedule>, Error>
+where
+    R: Call<recording::UpdateRecordingSchedule>,
+{
+    input.options.validate(&config)?;
+    let schedule = recording_manager
+        .call(recording::UpdateRecordingSchedule {
+            program_id,
+            options: input.options,
+            tags: input.tags,
+        })
+        .await??;
+    Ok(Json(schedule.into()))
 }
 
 /// Deletes a recording schedule.
