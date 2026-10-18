@@ -533,7 +533,10 @@ mod tests {
     #[test(tokio::test)]
     async fn test_command_builder() {
         for command in ["", " \t\n"] {
-            assert_matches!(CommandBuilder::new(command), Err(Error::UnableToParse(_)));
+            assert!(matches!(
+                CommandBuilder::new(command),
+                Err(Error::UnableToParse(_))
+            ));
         }
 
         let result = CommandBuilder::new("true")
