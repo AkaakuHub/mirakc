@@ -139,15 +139,16 @@ cache-dir = "/path/to/epg/cache"
 
 ## epg.program-sources
 
-Import complete program snapshots from commands without allocating a tuner.
-Each command writes one JSON array of [`EpgProgram`](../mirakc-core/src/epg/mod.rs)
-objects to stdout. This is mirakc's internal program format, not the
-Mirakurun `/api/programs` response format. Commands run directly without a shell.
+Import received EIT sections from commands without allocating a tuner.
+Each command writes a JSON array of objects containing a `date` in `YYYY-MM-DD`
+format and a `section` in [`EitSection`](../mirakc-core/src/epg/models.rs) format.
+The date identifies the acquisition day in JST, which defines the relative days
+of the section's schedule. Commands run directly without a shell.
 
 ```yaml
 epg:
   program-sources:
-    - command: /opt/tv/export-programs
+    - command: /opt/tv/export-sections
       services: [1100101]
       interval: 60s
 ```
@@ -159,17 +160,17 @@ the transport stream is disabled for those services unless `collect-command` is
 specified. This optional command consumes the channel's transport stream during
 manual and scheduled EPG collection, using the same tuner allocation and job
 priority as native EIT collection. It may update the external source's cache
-without writing to stdout, or emit `collect-eits` JSON sections. Program snapshots
+without writing to stdout, or emit `collect-eits` JSON sections. Section updates
 continue to be imported through `command` at the configured interval. Services
 on the same channel using the same collection command share one collection pass.
 
-An accepted snapshot replaces all programs for the configured services, including
-programs spanning midnight. An empty array clears them. Each program must have a
-unique ID, a start time, and a positive duration, and belong to a configured
-service. Snapshots are stored in the EPG cache when `epg.cache-dir` is configured.
+Accepted sections use the same schedule update and cache as broadcast EIT.
+Only acquired sections are replaced; sections omitted from the response remain.
+An empty event list clears its section, while an empty response changes nothing.
+Section and segment numbers must be consistent and services must be configured.
+Sections acquired on another day are not applied to today's relative schedule.
 Commands have a ten-second time limit and a 16 MiB output limit. Failed commands
-or invalid snapshots leave the last accepted snapshot intact until the next
-scheduled attempt.
+or invalid sections leave the cache intact. Identical responses do not rewrite it.
 
 ## server.addrs
 
