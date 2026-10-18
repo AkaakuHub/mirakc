@@ -29,6 +29,7 @@ where
     E: Call<QueryServices>,
     E: Emit<FlushSchedule>,
     E: Emit<PrepareSchedule>,
+    E: Emit<SaveSchedules>,
     E: Emit<UpdateSchedule>,
 {
     pub fn new(config: Arc<Config>, tuner_manager: T, epg: E) -> Self {
@@ -88,6 +89,7 @@ where
     E: Call<QueryServices>,
     E: Emit<FlushSchedule>,
     E: Emit<PrepareSchedule>,
+    E: Emit<SaveSchedules>,
     E: Emit<UpdateSchedule>,
 {
     async fn started(&mut self, _ctx: &mut Context<Self>) {
@@ -115,6 +117,7 @@ where
     E: Call<QueryServices>,
     E: Emit<FlushSchedule>,
     E: Emit<PrepareSchedule>,
+    E: Emit<SaveSchedules>,
     E: Emit<UpdateSchedule>,
 {
     async fn handle(
@@ -146,6 +149,7 @@ where
     T: TriggerFactory<StopStreaming>,
     E: Emit<FlushSchedule>,
     E: Emit<PrepareSchedule>,
+    E: Emit<SaveSchedules>,
     E: Emit<UpdateSchedule>,
 {
     const LABEL: &'static str = "epg.update-schedules";
@@ -161,8 +165,17 @@ where
 
     pub async fn collect_schedules(self) -> Result<(), Error> {
         for channel in self.channels.iter() {
-            Self::collect_eits_in_channel(channel, &self.command, &self.tuner_manager, &self.epg)
-                .await?;
+            match Self::collect_eits_in_channel(
+                channel,
+                &self.command,
+                &self.tuner_manager,
+                &self.epg,
+            )
+            .await
+            {
+                Ok(()) => self.epg.emit(SaveSchedules).await,
+                Err(err) => tracing::warn!(%err, %channel, "Failed to collect EIT sections"),
+            }
         }
         Ok(())
     }
