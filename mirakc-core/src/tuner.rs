@@ -1125,6 +1125,7 @@ mod tests {
                     r#"
                 tuners:
                   - name: first
+                    priority: 1
                     types: [GR]
                     command: sleep 1
                   - name: second
