@@ -82,7 +82,7 @@ where
     E: Call<epg::QueryProgram>,
     R: Call<recording::StartRecording>,
 {
-    input.validate(&config)?;
+    input.options.validate(&config)?;
     let msg = epg::QueryProgram {
         program_id: input.program_id,
     };

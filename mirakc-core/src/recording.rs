@@ -439,6 +439,60 @@ impl<T, E, O> RecordingManager<T, E, O> {
     }
 }
 
+// update recording schedule
+
+#[derive(Message)]
+#[reply(Result<RecordingSchedule, Error>)]
+pub struct UpdateRecordingSchedule {
+    pub program_id: ProgramId,
+    pub options: RecordingOptions,
+    pub tags: HashSet<String>,
+}
+
+#[async_trait]
+impl<T, E, O> Handler<UpdateRecordingSchedule> for RecordingManager<T, E, O>
+where
+    T: Clone + Send + Sync + 'static,
+    T: Call<StartStreaming>,
+    T: TriggerFactory<StopStreaming>,
+    E: Send + Sync + 'static,
+    E: Call<QueryClock>,
+    E: Call<QueryPrograms>,
+    E: Call<QueryService>,
+    E: Call<epg::RegisterEmitter>,
+    O: Clone + Send + Sync + 'static,
+    O: Call<onair::RegisterEmitter>,
+{
+    async fn handle(
+        &mut self,
+        msg: UpdateRecordingSchedule,
+        ctx: &mut Context<Self>,
+    ) -> <UpdateRecordingSchedule as Message>::Reply {
+        let schedule = self
+            .schedules
+            .get_mut(&msg.program_id)
+            .ok_or(Error::ScheduleNotFound)?;
+        if self.recorders.contains_key(&msg.program_id)
+            || !matches!(
+                schedule.state,
+                RecordingScheduleState::Scheduled
+                    | RecordingScheduleState::Tracking
+                    | RecordingScheduleState::Rescheduling
+            )
+        {
+            return Err(Error::ScheduleNotEditable);
+        }
+        schedule.options = msg.options;
+        schedule.tags = msg.tags;
+        let schedule = schedule.clone();
+        self.save_schedules();
+        self.rebuild_queue();
+        self.set_timer(ctx);
+        tracing::info!(schedule.program.id = %msg.program_id, "Updated schedule");
+        Ok(schedule)
+    }
+}
+
 // remove recording schedule
 
 #[derive(Message)]
@@ -2640,6 +2694,28 @@ pub(crate) mod stub {
                 1 => Ok(Err(Error::AlreadyExists)),
                 2 => Ok(Err(Error::ProgramEnded)),
                 _ => Ok(Ok(msg.schedule)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Call<UpdateRecordingSchedule> for RecordingManagerStub {
+        async fn call(
+            &self,
+            msg: UpdateRecordingSchedule,
+        ) -> actlet::Result<<UpdateRecordingSchedule as Message>::Reply> {
+            match self
+                .call(QueryRecordingSchedule {
+                    program_id: msg.program_id,
+                })
+                .await?
+            {
+                Ok(mut schedule) => {
+                    schedule.options = msg.options;
+                    schedule.tags = msg.tags;
+                    Ok(Ok(schedule))
+                }
+                Err(err) => Ok(Err(err)),
             }
         }
     }

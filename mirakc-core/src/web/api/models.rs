@@ -101,27 +101,37 @@ pub(in crate::web) struct WebRecordingScheduleInput {
     pub tags: HashSet<String>,
 }
 
-impl WebRecordingScheduleInput {
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(title = "RecordingScheduleUpdateInput")]
+pub(in crate::web) struct WebRecordingScheduleUpdateInput {
+    pub options: RecordingOptions,
+    #[serde(default)]
+    #[schema(value_type = Vec<String>)]
+    pub tags: HashSet<String>,
+}
+
+impl RecordingOptions {
     pub fn validate(&self, config: &Config) -> Result<(), Error> {
-        if self.options.content_path.is_absolute() {
+        if self.content_path.is_absolute() {
             let err = Error::InvalidPath;
             tracing::error!(
                 %err,
-                input.options.content_path = ?self.options.content_path
+                options.content_path = ?self.content_path
             );
             return Err(err);
         }
 
         let basedir = config.recording.basedir.as_ref().unwrap();
         if !basedir
-            .join(&self.options.content_path)
+            .join(&self.content_path)
             .parse_dot()?
             .starts_with(basedir)
         {
             let err = Error::InvalidPath;
             tracing::error!(
                 %err,
-                input.options.content_path = ?self.options.content_path
+                options.content_path = ?self.content_path
             );
             return Err(err);
         }

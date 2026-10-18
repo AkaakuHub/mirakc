@@ -22,6 +22,8 @@ pub enum Error {
     SessionNotFound,
     #[error("Schedule not found")]
     ScheduleNotFound,
+    #[error("Schedule cannot be edited in its current state")]
+    ScheduleNotEditable,
     #[error("Recorder not found")]
     RecorderNotFound,
     #[error("Out of range")]

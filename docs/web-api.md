@@ -29,6 +29,7 @@ Web API endpoints listed below have been implemented at this moment:
 | [GET /api/recording/schedules]                  |                            |
 | [POST /api/recording/schedules]                 |                            |
 | [GET /api/recording/schedules/{program_id}]     |                            |
+| [PUT /api/recording/schedules/{program_id}]     |                            |
 | [DELETE /api/recording/schedules/{program_id}]  |                            |
 | [GET /api/recording/recorders]                  |                            |
 | [POST /api/recording/recorders]                 |                            |
@@ -63,6 +64,7 @@ Web API endpoints listed below have been implemented as the mirakc extensions:
 * [GET /api/recording/schedules]
 * [POST /api/recording/schedules]
 * [GET /api/recording/schedules/{program_id}]
+* [PUT /api/recording/schedules/{program_id}]
 * [DELETE /api/recording/schedules/{program_id}]
 * [GET /api/recording/recorders]
 * [POST /api/recording/recorders]
@@ -100,6 +102,7 @@ Web API endpoints listed below have been implemented as the mirakc extensions:
 [GET /api/recording/schedules]: #get-apirecordingschedules
 [POST /api/recording/schedules]: #postapirecordingschedules
 [GET /api/recording/schedules/{program_id}]: #get-apirecordingschedulesprogram_id
+[PUT /api/recording/schedules/{program_id}]: #put-apirecordingschedulesprogram_id
 [DELETE /api/recording/schedules/{program_id}]: #deleteapirecordingschedulesprogram_id
 [GET /api/recording/recorders]: #get-apirecordingrecorders
 [POST /api/recording/recorders]: #postapirecordingrecorders
@@ -326,6 +329,17 @@ Creates a recording schedule.
 ### GET /api/recording/schedules/{program_id}
 
 Returns a recording schedule for a specified program.
+
+### PUT /api/recording/schedules/{program_id}
+
+Replaces the options and tags of an existing schedule. The request body contains
+`options` and `tags`, using the same format as schedule creation. Program metadata
+and tracking state are preserved. The update, persistence and queue rebuild run
+within a single recording-manager message.
+
+Returns 404 if the schedule does not exist, or 409 if recording has started or the
+schedule has finished or failed. Invalid content paths are rejected before the
+schedule is changed.
 
 ### DELETE /api/recording/schedules/{program_id}
 
