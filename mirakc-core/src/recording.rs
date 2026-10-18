@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
@@ -1074,7 +1075,15 @@ where
                 let record = tokio::fs::File::create(&content_path).await?;
                 let mut writer = BufWriter::new(record);
                 // TODO: use Stdio
-                tokio::io::copy(&mut output, &mut writer).await
+                let bytes = tokio::io::copy(&mut output, &mut writer).await?;
+                writer.flush().await?;
+                if bytes == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "The recording pipeline produced no data",
+                    ));
+                }
+                Ok(bytes)
             }
         };
         // Outer future emits messages to observers.
@@ -1370,12 +1379,12 @@ impl<T, E, O> RecordingManager<T, E, O> {
                         changed = true;
                     }
                     self.emit_recording_failed(program_id, reason).await;
-                } else {
-                    tracing::info!(
-                        schedule.program.id = %program_id,
-                        "The recording finished successfully",
-                    );
-                    if let Some(schedule) = maybe_schedule {
+                } else if let Some(schedule) = maybe_schedule {
+                    if !matches!(schedule.state, RecordingScheduleState::Failed) {
+                        tracing::info!(
+                            schedule.program.id = %program_id,
+                            "The recording finished successfully",
+                        );
                         schedule.state = RecordingScheduleState::Finished;
                         changed = true;
                     }
@@ -1442,6 +1451,11 @@ where
 {
     async fn handle(&mut self, msg: RecordingFailed, _ctx: &mut Context<Self>) {
         tracing::debug!(msg.name = "RecordingFailed", %msg.program_id, ?msg.reason);
+        if let Some(schedule) = self.schedules.get_mut(&msg.program_id) {
+            schedule.state = RecordingScheduleState::Failed;
+            schedule.failed_reason = Some(msg.reason.clone());
+            self.save_schedules();
+        }
         self.emit_recording_failed(msg.program_id, msg.reason).await;
     }
 }
