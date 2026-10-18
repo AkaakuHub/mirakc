@@ -376,7 +376,9 @@ impl<'a> CommandBuilder<'a> {
             Err(_) => return Err(Error::UnableToParse(command.to_string())),
         };
 
-        let (prog, args) = words.split_first().unwrap();
+        let Some((prog, args)) = words.split_first() else {
+            return Err(Error::UnableToParse(command.to_string()));
+        };
 
         let mut inner = Command::new(prog);
         inner.args(args);
@@ -530,6 +532,10 @@ mod tests {
 
     #[test(tokio::test)]
     async fn test_command_builder() {
+        for command in ["", " \t\n"] {
+            assert_matches!(CommandBuilder::new(command), Err(Error::UnableToParse(_)));
+        }
+
         let result = CommandBuilder::new("true")
             .and_then(|mut builder| builder.stdin(Stdio::null()).stdout(Stdio::piped()).spawn());
         assert!(result.is_ok());
