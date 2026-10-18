@@ -165,7 +165,9 @@ where
 
     pub async fn collect_schedules(self) -> Result<(), Error> {
         for (channel, command) in &self.channels {
-            match Self::collect_eits_in_channel(channel, command, &self.tuner_manager, &self.epg).await {
+            match Self::collect_eits_in_channel(channel, command, &self.tuner_manager, &self.epg)
+                .await
+            {
                 Ok(()) => self.epg.emit(SaveSchedules).await,
                 Err(err) => tracing::warn!(%err, %channel, "Failed to collect EIT sections"),
             }
