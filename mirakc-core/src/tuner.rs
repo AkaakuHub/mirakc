@@ -226,7 +226,12 @@ impl TunerManager {
             .tuners
             .iter()
             .filter(|tuner| !tuner.is_excluded_for(channel))
-            .filter(|tuner| tuner.is_reuseable(channel) || tuner.is_available_for(channel))
+            .filter(|tuner| tuner.is_supported_type(channel))
+            .filter(|tuner| {
+                tuner.is_reuseable(channel)
+                    || tuner.is_available_for(channel)
+                    || tuner.can_grab(user.priority)
+            })
             .map(|tuner| tuner.config_priority)
             .max();
 
@@ -268,6 +273,7 @@ impl TunerManager {
             .iter_mut()
             .filter(|tuner| tuner.is_supported_type(channel))
             .filter(|tuner| !tuner.is_excluded_for(channel))
+            .filter(|tuner| Some(tuner.config_priority) == priority)
             .filter(|tuner| tuner.can_grab(user.priority))
             .min_by(|a, b| a.priority().cmp(&b.priority()));
         if let Some(tuner) = found {
