@@ -207,13 +207,16 @@ impl TunerManager {
             preferred_tuner == Some(tuner.name.as_str())
                 && !tuner.is_excluded_for(channel)
                 && tuner.is_supported_type(channel)
-                && (tuner.is_reuseable(channel) || tuner.is_available_for(channel))
+                && (tuner.is_reuseable(channel)
+                    || tuner.is_available_for(channel)
+                    || tuner.can_grab(user.priority))
         });
         if let Some(tuner) = found {
             tracing::debug!(tuner.index, %channel, %user.info, "Use preferred tuner");
-            if !tuner.is_active() {
+            if !tuner.is_reuseable(channel) {
                 let filters =
                     Self::make_filter_commands(tuner, channel, &self.config.filters.tuner_filter)?;
+                tuner.deactivate();
                 tuner.activate(channel, filters, ctx).await?;
             }
             self.event_emitters
