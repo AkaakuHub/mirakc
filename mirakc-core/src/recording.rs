@@ -155,7 +155,10 @@ impl<T, E, O> RecordingManager<T, E, O> {
         for schedule in schedules {
             self.queue.push(QueueItem {
                 program_id: schedule.program.id,
-                start_at: schedule.program.start_at.unwrap(),
+                start_at: schedule.program.start_at.unwrap()
+                    - Duration::milliseconds(i64::from(
+                        schedule.options.start_margin_ms.unwrap_or_default().max(0),
+                    )),
                 priority: schedule.options.priority,
             });
         }
@@ -1042,6 +1045,12 @@ where
             .insert("clock_time", &clock.time)?
             .insert("video_tags", &video_tags)?
             .insert("audio_tags", &audio_tags)?;
+        if let Some(margin) = schedule.options.start_margin_ms {
+            builder = builder.insert_str("recording_start_margin_ms", &margin.to_string());
+        }
+        if let Some(margin) = schedule.options.end_margin_ms {
+            builder = builder.insert_str("recording_end_margin_ms", &margin.to_string());
+        }
         let data = builder.build();
 
         let mut builder = FilterPipelineBuilder::new(data);
@@ -1825,6 +1834,12 @@ pub struct RecordingOptions {
     /// A priority of tuner usage.
     #[serde(default)]
     pub priority: i32,
+    /// Recording start margin in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_margin_ms: Option<i32>,
+    /// Recording end margin in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_margin_ms: Option<i32>,
     /// A list of pre-filters to use.
     #[serde(default)]
     pub pre_filters: Vec<String>,
@@ -1884,6 +1899,8 @@ mod test_macros {
                 disabled: false,
                 content_path: $content_path.into(),
                 priority: $priority.into(),
+                start_margin_ms: None,
+                end_margin_ms: None,
                 pre_filters: vec![],
                 post_filters: vec![],
             }

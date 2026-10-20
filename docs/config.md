@@ -35,7 +35,7 @@ suitable for your environment.
 | [filters.tuner-filter.command]           | `''`                              |
 | [filters.service-filter.command]         | `mirakc-arib filter-service --sid={{{sid}}}` |
 | [filters.decode-filter.command]          | `''`                              |
-| [filters.program-filter.command]         | `mirakc-arib filter-program --sid={{{sid}}} --eid={{{eid}}} --clock-pid={{{clock_pid}}} --clock-pcr={{{clock_pcr}}} --clock-time={{{clock_time}}} --end-margin=2000{{#video_tags}} --video-tag={{{.}}}{{/video_tags}}{{#audio_tags}} --audio-tag={{{.}}}{{/audio_tags}}{{#if wait_until}} --wait-until={{{wait_until}}}{{/if}}` |
+| [filters.program-filter.command]         | `mirakc-arib filter-program --sid={{{sid}}} --eid={{{eid}}} --clock-pid={{{clock_pid}}} --clock-pcr={{{clock_pcr}}} --clock-time={{{clock_time}}} {{#recording_start_margin_ms}}--start-margin={{{.}}}{{/recording_start_margin_ms}}{{^recording_start_margin_ms}}--start-margin=0{{/recording_start_margin_ms}} {{#recording_end_margin_ms}}--end-margin={{{.}}}{{/recording_end_margin_ms}}{{^recording_end_margin_ms}}--end-margin=2000{{/recording_end_margin_ms}}{{#video_tags}} --video-tag={{{.}}}{{/video_tags}}{{#audio_tags}} --audio-tag={{{.}}}{{/audio_tags}}{{#if wait_until}} --wait-until={{{wait_until}}}{{/if}}` |
 | [pre-filters]                            | `{}`                              |
 | [post-filters]                           | `{}`                              |
 | [jobs.scan-services.command]             | `timeout 30 mirakc-arib scan-services{{#sids}} --sids={{{.}}}{{/sids}}{{#xsids}} --xsids={{{.}}}{{/xsids}}` (timeout: 30s) |
@@ -839,6 +839,11 @@ A filter to control streaming for a specified program.
 
 This filter starts streaming when the program starts and stops streaming when
 the program ends.
+
+Recording schedules may set `startMarginMs` and `endMarginMs` in their options.
+The corresponding `recording_start_margin_ms` and `recording_end_margin_ms`
+template values are available only while recording. A positive start margin
+also advances the recorder's preparation time.
 
 This filter will be used in the following streaming API endpoints:
 
