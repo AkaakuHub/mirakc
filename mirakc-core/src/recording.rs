@@ -653,7 +653,9 @@ impl<T, E, O> RecordingManager<T, E, O> {
             // Schedules in "Tracking" and "Recording" are retained.
             match schedule.state {
                 Scheduled => {
-                    let start_time = schedule.program.start_at.unwrap();
+                    let (start_margin_ms, _) = schedule.effective_margins_ms();
+                    let start_time = schedule.program.start_at.unwrap()
+                        - Duration::milliseconds(start_margin_ms.unwrap_or_default());
                     // Always retain schedules which will start soon
                     // (or have already started).
                     start_time - now <= prep_time
