@@ -773,6 +773,9 @@ where
             ?msg.schedule.options.post_filters,
         );
         let program_id = msg.schedule.program.id;
+        if msg.schedule.options.disabled {
+            return Err(Error::ScheduleNotEditable);
+        }
         self.add_schedule(msg.schedule)?;
         self.start_recording(program_id, ctx.address().clone(), ctx)
             .await;
@@ -887,6 +890,9 @@ impl<T, E, O> RecordingManager<T, E, O> {
             }
             if schedule.program.start_at.unwrap() + max_delay > now {
                 return true;
+            }
+            if schedule.options.disabled {
+                return false;
             }
             match schedule.state {
                 Scheduled | Tracking | Rescheduling => {
@@ -1769,7 +1775,7 @@ impl RecordingSchedule {
 
     fn is_ready_for_recording(&self) -> bool {
         use RecordingScheduleState::*;
-        matches!(self.state, Scheduled | Tracking)
+        !self.options.disabled && matches!(self.state, Scheduled | Tracking)
     }
 
     fn is_recording(&self) -> bool {
@@ -1810,6 +1816,9 @@ pub struct RecordingOptions {
     /// Another tuner is selected automatically when unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_tuner: Option<String>,
+    /// Keep the schedule without starting a recording.
+    #[serde(default)]
+    pub disabled: bool,
     /// A relative path of a file to store recorded data.
     #[schema(value_type = String)]
     pub content_path: PathBuf,
@@ -1872,6 +1881,7 @@ mod test_macros {
         ($content_path:expr, $priority:expr) => {
             RecordingOptions {
                 preferred_tuner: None,
+                disabled: false,
                 content_path: $content_path.into(),
                 priority: $priority.into(),
                 pre_filters: vec![],
@@ -2044,6 +2054,32 @@ mod tests {
             assert_eq!(item.program_id, (0, 1, 1).into());
         });
         assert_matches!(manager.queue.pop(), None);
+    }
+
+    #[test]
+    fn test_disabled_schedule_is_saved_but_not_queued() {
+        let now = Jst::now();
+        let temp_dir = TempDir::new().unwrap();
+        let config = config_for_test(temp_dir.path());
+        let mut manager = manager!(config.clone());
+        let mut schedule = schedule!(
+            RecordingScheduleState::Scheduled,
+            program!((0, 1, 1), now + Duration::try_hours(1).unwrap()),
+            options!("1.m2ts", 0)
+        );
+        schedule.options.disabled = true;
+        manager.add_schedule(schedule).unwrap();
+        manager.save_schedules();
+
+        let mut manager = manager!(config);
+        manager.load_schedules();
+        manager.rebuild_queue();
+        assert!(manager.queue.is_empty());
+        let schedule = manager.schedules.get_mut(&(0, 1, 1).into()).unwrap();
+        assert!(schedule.options.disabled);
+        schedule.options.disabled = false;
+        manager.rebuild_queue();
+        assert_eq!(manager.queue.len(), 1);
     }
 
     #[allow(clippy::get_first)]

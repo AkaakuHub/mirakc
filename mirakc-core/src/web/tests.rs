@@ -387,6 +387,7 @@ async fn test_create_recording_schedule() {
         program_id: (0, 0, 0).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "0.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -402,6 +403,7 @@ async fn test_create_recording_schedule() {
         program_id: (0, 0, 1).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "1.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -417,6 +419,7 @@ async fn test_create_recording_schedule() {
         program_id: (0, 0, 2).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "2.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -432,6 +435,7 @@ async fn test_create_recording_schedule() {
         program_id: (0, 0, 4).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "4.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -447,6 +451,7 @@ async fn test_create_recording_schedule() {
         program_id: (0, 0, 4).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "/4.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -462,6 +467,7 @@ async fn test_create_recording_schedule() {
         program_id: (0, 0, 4).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "../4.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -512,6 +518,7 @@ async fn test_create_recording_recorder() {
         program_id: (0, 0, 1).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "program.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
@@ -526,6 +533,7 @@ async fn test_create_recording_recorder() {
         program_id: (0, 0, 0).into(),
         options: RecordingOptions {
             preferred_tuner: None,
+            disabled: false,
             content_path: "program.m2ts".into(),
             priority: 1,
             pre_filters: vec![],
