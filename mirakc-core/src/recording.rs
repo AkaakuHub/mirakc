@@ -153,12 +153,11 @@ impl<T, E, O> RecordingManager<T, E, O> {
             .values()
             .filter(|schedule| schedule.is_ready_for_recording());
         for schedule in schedules {
+            let (start_margin_ms, _) = schedule.effective_margins_ms();
             self.queue.push(QueueItem {
                 program_id: schedule.program.id,
                 start_at: schedule.program.start_at.unwrap()
-                    - Duration::milliseconds(i64::from(
-                        schedule.options.start_margin_ms.unwrap_or_default().max(0),
-                    )),
+                    - Duration::milliseconds(start_margin_ms.unwrap_or_default()),
                 priority: schedule.options.priority,
             });
         }
@@ -654,7 +653,9 @@ impl<T, E, O> RecordingManager<T, E, O> {
             // Schedules in "Tracking" and "Recording" are retained.
             match schedule.state {
                 Scheduled => {
-                    let start_time = schedule.program.start_at.unwrap();
+                    let (start_margin_ms, _) = schedule.effective_margins_ms();
+                    let start_time = schedule.program.start_at.unwrap()
+                        - Duration::milliseconds(start_margin_ms.unwrap_or_default());
                     // Always retain schedules which will start soon
                     // (or have already started).
                     start_time - now <= prep_time
@@ -1045,10 +1046,11 @@ where
             .insert("clock_time", &clock.time)?
             .insert("video_tags", &video_tags)?
             .insert("audio_tags", &audio_tags)?;
-        if let Some(margin) = schedule.options.start_margin_ms {
+        let (start_margin_ms, end_margin_ms) = schedule.effective_margins_ms();
+        if let Some(margin) = start_margin_ms {
             builder = builder.insert_str("recording_start_margin_ms", &margin.to_string());
         }
-        if let Some(margin) = schedule.options.end_margin_ms {
+        if let Some(margin) = end_margin_ms {
             builder = builder.insert_str("recording_end_margin_ms", &margin.to_string());
         }
         let data = builder.build();
@@ -1775,6 +1777,24 @@ impl RecordingSchedule {
             tags,
             failed_reason: None,
         }
+    }
+
+    fn effective_margins_ms(&self) -> (Option<i64>, Option<i64>) {
+        let duration_ms = self
+            .program
+            .duration
+            .map(|duration| duration.num_milliseconds());
+        let start = self.options.start_margin_ms.map(|margin| {
+            let margin = i64::from(margin);
+            duration_ms.map_or(margin, |duration| margin.max(-duration))
+        });
+        let end = self.options.end_margin_ms.map(|margin| {
+            let margin = i64::from(margin);
+            duration_ms.map_or(margin, |duration| {
+                margin.max(-duration - start.unwrap_or_default().min(0))
+            })
+        });
+        (start, end)
     }
 
     fn can_be_updated_by_epg(&self) -> bool {
